@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>OctoStream</title>
+		<style>
+			body {
+				margin: 0;
+				background-color: black;
+			}
+
+			#canary {
+				display: none;
+			}
+
+			#stream {
+				background-repeat: no-repeat;
+				background-size: cover;
+				aspect-ratio: 4 / 3;
+				max-width: 100vw;
+				max-height: 100vh;
+				position: relative;
+			}
+
+			#state {
+				background-color: rgba(0, 0, 0, .5);
+				padding: 20px;
+				font-weight: bold;
+				color: white;
+				text-transform: uppercase;
+				font-family: sans-serif;
+				position: absolute;
+			}
+
+			@media (max-width: 1499px) {
+				#state {
+					bottom: -200px;
+					left: 0;
+				}
+			}
+
+			@media (min-width: 1500px) {
+				#state {
+					bottom: 20px;
+					right: 20px;
+				}
+			}
+
+			#state td:first-of-type {
+				padding-right: 20px;
+			}
+		</style>
+		<link rel="preload" as="image" href="/offline.jpg">
+	</head>
+	<body>
+		<img id="canary" src="/stream.jpg">
+		<div id="stream">
+			<div id="state"></div>
+		</div>
+	</body>
+	<script>
+		let state = null;
+		let canary = null;
+
+		document.getElementById('canary').addEventListener(
+			'error',
+			(e) => {
+				setTimeout(() => { document.getElementById('canary').src = `/stream.jpg?canary=${+(new Date())}`; }, 5000);
+
+				if (canary !== false) {
+					canary = false;
+					document.getElementById('stream').style.backgroundImage = 'url("/offline.jpg")';
+				}
+				
+			}
+		);
+
+		document.getElementById('canary').addEventListener(
+			'load',
+			(e) => {
+				setTimeout(() => { document.getElementById('canary').src = `/stream.jpg?canary=${+(new Date())}`; }, 5000);
+
+				if (canary !== true) {
+					canary = true;
+					document.getElementById('stream').style.backgroundImage = `url("${document.getElementById('canary').getAttribute('src')}")`;
+				}
+			}
+		);
+
+		document.addEventListener(
+			'DOMContentLoaded',
+			() => {
+				const updateState = async () => {
+					try {
+						state = await (
+							await fetch(
+								'/api/state',
+								{
+									method: 'GET'
+								}
+							)
+						).json();
+					} catch {
+						state = null;
+					} 
+
+					const offline = !state || !state.printer || state.printer.error || document.getElementById('stream').style.backgroundImage === 'url("/offline.jpg")';
+
+					document.getElementById('state').innerHTML = !offline ? `
+						<table>
+							<tbody>
+								<tr>
+									<td>Status:</td>
+									<td>${state.job.state}</td>
+								</tr>
+								<tr>
+									<td>Bed Temp (Actual / Target):</td>
+									<td>${state.printer.temperature.bed.actual}°C / ${state.printer.temperature.bed.target ? `${state.printer.temperature.bed.target}°C` : '&mdash;'}</td>
+								</tr>
+								<tr>
+									<td>Tool Temp (Actual / Target):</td>
+									<td>${state.printer.temperature.tool0.actual}°C / ${state.printer.temperature.tool0.target ? `${state.printer.temperature.tool0.target}°C` : '&mdash;'}</td>
+								</tr>
+								${
+									state.job.state === 'Printing' ? `
+										${
+											state.job.progress.completion ? `
+												<tr>
+													<td>Completion:</td>
+													<td>${state.job.progress.completion ? state.job.progress.completion.toFixed(2) : 0}%</td>
+												</tr>
+												<tr>
+													<td>Time Elapsed:</td>
+													<td>${((state.job.progress.printTime - (state.job.progress.printTime % (60 * 60))) / (60 * 60)).toString().padStart(2, '0')}:${(((state.job.progress.printTime % (60 * 60)) - ((state.job.progress.printTime % (60 * 60)) % 60)) / 60).toString().padStart(2, '0')}:${(state.job.progress.printTime % 60).toString().padStart(2, '0')}</td>
+												</tr>
+												<tr>
+													<td>Time Remaining:</td>
+													<td>${((state.job.progress.printTimeLeft - (state.job.progress.printTimeLeft % (60 * 60))) / (60 * 60)).toString().padStart(2, '0')}:${(((state.job.progress.printTimeLeft % (60 * 60)) - ((state.job.progress.printTimeLeft % (60 * 60)) % 60)) / 60).toString().padStart(2, '0')}:${(state.job.progress.printTimeLeft % 60).toString().padStart(2, '0')}</td>
+												</tr>
+											` : ''
+										}
+										${
+											state.job && state.job.job && state.job.job.file && state.job.job.file.name ? `
+												<tr>
+													<td>File:</td>
+													<td>${state.job.job.file.name}</td>
+												</tr>
+											` : ''
+										}
+									` : ''
+								}
+							</tbody>
+						</table>
+					` : '';
+				};
+
+				updateState();
+				setInterval(updateState, 5000);
+			}
+		);
+	</script>
+</html>
